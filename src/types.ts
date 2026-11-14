@@ -17,8 +17,14 @@ export interface DoseConfig {
   flowMode?: 'dose' | 'direct_ml_h';
 }
 
+export interface PatientProfile {
+  id: string;
+  label: string;
+}
+
 export interface SyringeData {
   id: string;
+  patientId?: string;
   name: string;
   drugName: string;
   nominalVolume: number; // in ml, freely digitised, > 0, supports decimals (e.g. 50, 40, 30, 20, 35, 12.5)

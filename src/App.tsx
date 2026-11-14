@@ -23,9 +23,14 @@ import {
   ListChecks,
   LayoutGrid,
   Plus,
-  Syringe
+  Syringe,
+  Users,
+  Pencil,
+  Check,
+  X,
+  Trash2
 } from 'lucide-react';
-import { SyringeData, ShiftType } from './types';
+import { PatientProfile, SyringeData, ShiftType } from './types';
 import {
   computeSyringeCalculations,
   formatVolume,
@@ -92,6 +97,24 @@ const DEFAULT_SYRINGES: SyringeData[] = [
   }
 ];
 
+const DEFAULT_PATIENTS: PatientProfile[] = [
+  { id: 'pat-1', label: 'Paziente 1' },
+  { id: 'pat-2', label: 'Paziente 2' }
+];
+
+function loadSavedPatients(): PatientProfile[] {
+  try {
+    const saved = localStorage.getItem('syringe_patients');
+    if (saved !== null) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return DEFAULT_PATIENTS;
+}
+
 function loadSavedSyringes(): SyringeData[] {
   try {
     const saved = localStorage.getItem('syringe_data');
@@ -135,6 +158,14 @@ export default function App() {
     }
     return false;
   });
+
+  // Patients (default: Paziente 1 and Paziente 2)
+  const [patients, setPatients] = useState<PatientProfile[]>(() => loadSavedPatients());
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(
+    () => loadSavedPatients()[0]?.id ?? 'pat-1'
+  );
+  const [editingPatientId, setEditingPatientId] = useState<string | null>(null);
+  const [editingPatientLabel, setEditingPatientLabel] = useState<string>('');
 
   // Active Syringes (starts empty on first open; preserves [] if cleared)
   const [syringes, setSyringes] = useState<SyringeData[]>(() => loadSavedSyringes());
@@ -196,7 +227,7 @@ export default function App() {
     }
   }, [isSoundMuted]);
 
-  // Save syringes state to localStorage
+  // Save syringes & patients state to localStorage
   useEffect(() => {
     try {
       localStorage.setItem('syringe_data', JSON.stringify(syringes));
@@ -205,11 +236,37 @@ export default function App() {
     }
   }, [syringes]);
 
-  // Get active syringe (may be undefined when list is empty)
+  useEffect(() => {
+    try {
+      localStorage.setItem('syringe_patients', JSON.stringify(patients));
+    } catch {
+      // ignore
+    }
+  }, [patients]);
+
+  const defaultPatientId = patients[0]?.id ?? 'pat-1';
+  const resolvePatientId = (syr: SyringeData): string => {
+    if (syr.patientId && patients.some((p) => p.id === syr.patientId)) {
+      return syr.patientId;
+    }
+    return defaultPatientId;
+  };
+
+  const getPatientLabel = (patId?: string): string => {
+    const found = patients.find((p) => p.id === patId) || patients[0];
+    return found?.label ?? 'Paziente 1';
+  };
+
+  const visibleSyringes = useMemo(() => {
+    if (selectedPatientId === 'all') return syringes;
+    return syringes.filter((s) => resolvePatientId(s) === selectedPatientId);
+  }, [syringes, selectedPatientId, patients]);
+
+  // Get active syringe within current patient scope (may be undefined when empty)
   const activeSyringe = useMemo<SyringeData | undefined>(() => {
-    if (syringes.length === 0) return undefined;
-    return syringes.find((s) => s.id === activeSyringeId) || syringes[0];
-  }, [syringes, activeSyringeId]);
+    if (visibleSyringes.length === 0) return undefined;
+    return visibleSyringes.find((s) => s.id === activeSyringeId) || visibleSyringes[0];
+  }, [visibleSyringes, activeSyringeId]);
 
   // Keep input fields in sync when active syringe changes
   useEffect(() => {
@@ -311,11 +368,12 @@ export default function App() {
     return computeDoseFlow(activeSyringe);
   }, [activeSyringe]);
 
-  // Compute earliest upcoming empty pump across all pumps (prefer running pumps)
+  // Compute earliest upcoming empty pump within selected patient scope (prefer running pumps)
   const nextExpiringPump = useMemo(() => {
-    const entries = syringes.map((syringe, idx) => ({
+    const entries = visibleSyringes.map((syringe, idx) => ({
       index: idx + 1,
       syringe,
+      patientLabel: getPatientLabel(syringe.patientId),
       calcs: computeSyringeCalculations(syringe, currentTime, shiftEndDate)
     }));
 
@@ -335,7 +393,23 @@ export default function App() {
       .sort((a, b) => a.calcs.durationHours - b.calcs.durationHours);
 
     return anyUpcoming[0] ?? null;
-  }, [syringes, currentTime, shiftEndDate]);
+  }, [visibleSyringes, currentTime, shiftEndDate, patients]);
+
+  const patientSummaries = useMemo(() => {
+    return patients.map((pat) => {
+      const patSyringes = syringes.filter((s) => resolvePatientId(s) === pat.id);
+      const hasAlert = patSyringes.some((s) => {
+        if (s.alarmDismissed) return false;
+        const c = computeSyringeCalculations(s, currentTime, shiftEndDate);
+        return c.isPreAlarmActive || c.isUrgentAlarmActive;
+      });
+      return {
+        patient: pat,
+        count: patSyringes.length,
+        hasAlert
+      };
+    });
+  }, [patients, syringes, currentTime, shiftEndDate]);
 
   // Quick volume selection handler for 20, 30, 40, 50 ml
   const handleQuickVolumeSelect = (vol: number) => {
@@ -463,6 +537,13 @@ export default function App() {
     soundManager.playClick();
     setSyringes((prev) => [...prev, newSyringe]);
     setActiveSyringeId(newSyringe.id);
+    if (
+      newSyringe.patientId &&
+      selectedPatientId !== 'all' &&
+      selectedPatientId !== newSyringe.patientId
+    ) {
+      setSelectedPatientId(newSyringe.patientId);
+    }
   };
 
   // Delete single syringe (can delete down to 0 pumps)
@@ -478,18 +559,77 @@ export default function App() {
     });
   };
 
-  // Clear all syringes (start from 0)
+  // Clear syringes in current scope (selected patient or all patients)
   const handleClearAllSyringes = () => {
+    soundManager.playClick();
+    if (selectedPatientId === 'all') {
+      setSyringes([]);
+      setActiveSyringeId('');
+      return;
+    }
+    setSyringes((prev) => {
+      const remaining = prev.filter((s) => resolvePatientId(s) !== selectedPatientId);
+      setActiveSyringeId(remaining[0]?.id ?? '');
+      return remaining;
+    });
+  };
+
+  // Clear absolutely all syringes on startup "Riparti da 0"
+  const handleResetAllOnStartup = () => {
     soundManager.playClick();
     setSyringes([]);
     setActiveSyringeId('');
   };
 
+  // Patient management handlers
+  const handleAddPatient = () => {
+    soundManager.playClick();
+    const newId = `pat-${Date.now()}`;
+    const newPat: PatientProfile = {
+      id: newId,
+      label: `Paziente ${patients.length + 1}`
+    };
+    setPatients((prev) => [...prev, newPat]);
+    setSelectedPatientId(newId);
+    setEditingPatientId(newId);
+    setEditingPatientLabel(newPat.label);
+  };
+
+  const handleSavePatientRename = () => {
+    if (!editingPatientId) return;
+    const trimmed = editingPatientLabel.trim();
+    if (trimmed) {
+      setPatients((prev) =>
+        prev.map((p) => (p.id === editingPatientId ? { ...p, label: trimmed } : p))
+      );
+    }
+    setEditingPatientId(null);
+    setEditingPatientLabel('');
+  };
+
+  const handleDeletePatient = (patId: string) => {
+    if (patients.length <= 1) return;
+    soundManager.playClick();
+    const remaining = patients.filter((p) => p.id !== patId);
+    setPatients(remaining);
+    setSyringes((prev) => prev.filter((s) => resolvePatientId(s) !== patId));
+    if (selectedPatientId === patId) {
+      setSelectedPatientId(remaining[0]?.id ?? 'all');
+    }
+  };
+
   // Load sample pumps on request from empty state
   const handleLoadSampleSyringes = () => {
     soundManager.playClick();
-    setSyringes(DEFAULT_SYRINGES);
-    setActiveSyringeId(DEFAULT_SYRINGES[0].id);
+    const targetPatId =
+      selectedPatientId === 'all' ? defaultPatientId : selectedPatientId;
+    const samplesForPatient = DEFAULT_SYRINGES.map((s) => ({
+      ...s,
+      id: `${s.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      patientId: targetPatId
+    }));
+    setSyringes((prev) => [...prev, ...samplesForPatient]);
+    setActiveSyringeId(samplesForPatient[0].id);
   };
 
   // Per-pump handlers for PumpsOverview list screen
@@ -629,7 +769,7 @@ export default function App() {
               }`}
             >
               <ListChecks className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span>Elenco Pompe ({syringes.length})</span>
+              <span>Elenco Pompe ({visibleSyringes.length})</span>
             </button>
             <button
               type="button"
@@ -703,7 +843,7 @@ export default function App() {
             }`}
           >
             <ListChecks className="w-3.5 h-3.5 shrink-0" />
-            <span>Elenco ({syringes.length})</span>
+            <span>Elenco ({visibleSyringes.length})</span>
           </button>
           <button
             type="button"
@@ -733,8 +873,164 @@ export default function App() {
       <main
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="max-w-7xl mx-auto px-4 sm:px-6 py-6 touch-pan-y overflow-x-hidden min-h-[calc(100vh-5rem)]"
+        className="max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6 touch-pan-y overflow-x-hidden min-h-[calc(100vh-5rem)] space-y-4"
       >
+        {/* Multi-Patient Switcher Toolbar */}
+        <section
+          aria-label="Selezione Paziente"
+          data-no-swipe="true"
+          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2.5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+        >
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+            <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono uppercase tracking-wider text-slate-400 mr-1 shrink-0">
+              <Users className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              Pazienti:
+            </span>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundManager.playClick();
+                setSelectedPatientId('all');
+                setEditingPatientId(null);
+              }}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                selectedPatientId === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700'
+              }`}
+            >
+              <span>Tutti ({syringes.length})</span>
+              {patientSummaries.some((ps) => ps.hasAlert) && selectedPatientId !== 'all' && (
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              )}
+            </button>
+
+            {patientSummaries.map(({ patient, count, hasAlert }) => {
+              const isSelected = selectedPatientId === patient.id;
+              return (
+                <button
+                  key={patient.id}
+                  type="button"
+                  onClick={() => {
+                    soundManager.playClick();
+                    setSelectedPatientId(patient.id);
+                    if (editingPatientId && editingPatientId !== patient.id) {
+                      setEditingPatientId(null);
+                    }
+                  }}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                    isSelected
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : hasAlert
+                      ? 'bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200/70 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {hasAlert && (
+                    <AlertTriangle
+                      className={`w-3.5 h-3.5 shrink-0 ${
+                        isSelected ? 'text-amber-200' : 'text-amber-600 dark:text-amber-400'
+                      }`}
+                    />
+                  )}
+                  <span className="truncate max-w-[130px]">{patient.label}</span>
+                  <span
+                    className={`font-mono text-[11px] ${
+                      isSelected ? 'text-blue-100' : 'text-slate-400 dark:text-slate-400'
+                    }`}
+                  >
+                    ({count})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {editingPatientId ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSavePatientRename();
+                }}
+                className="flex items-center gap-1"
+              >
+                <input
+                  type="text"
+                  value={editingPatientLabel}
+                  onChange={(e) => setEditingPatientLabel(e.target.value)}
+                  placeholder="Es. Letto 1 · Rossi"
+                  autoFocus
+                  maxLength={28}
+                  className="px-2.5 py-1 text-xs rounded-lg border border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none w-36 sm:w-44"
+                />
+                <button
+                  type="submit"
+                  title="Salva nome paziente"
+                  aria-label="Salva nome paziente"
+                  className="p-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingPatientId(null);
+                    setEditingPatientLabel('');
+                  }}
+                  title="Annulla"
+                  aria-label="Annulla"
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            ) : (
+              <>
+                {selectedPatientId !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pat = patients.find((p) => p.id === selectedPatientId);
+                      if (pat) {
+                        setEditingPatientId(pat.id);
+                        setEditingPatientLabel(pat.label);
+                      }
+                    }}
+                    title="Rinomina paziente selezionato (es. Letto 1)"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    <Pencil className="w-3 h-3 text-slate-500 dark:text-slate-400" />
+                    <span>Rinomina</span>
+                  </button>
+                )}
+
+                {selectedPatientId !== 'all' && patients.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePatient(selectedPatientId)}
+                    title="Rimuovi paziente"
+                    className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-medium text-rose-600 dark:text-rose-400 transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleAddPatient}
+                  title="Aggiungi un altro paziente"
+                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>Paziente</span>
+                </button>
+              </>
+            )}
+          </div>
+        </section>
+
         <AnimatePresence mode="wait" initial={false} custom={swipeDirection}>
           <motion.div
             key={activeView}
@@ -747,10 +1043,12 @@ export default function App() {
           >
         {activeView === 'list' ? (
           <PumpsOverview
-            syringes={syringes}
+            syringes={visibleSyringes}
             activeSyringeId={activeSyringe?.id ?? ''}
             currentTime={currentTime}
             shiftEndDate={shiftEndDate}
+            patients={patients}
+            selectedPatientId={selectedPatientId}
             onSelectPump={handleSelectPumpFromList}
             onToggleRunning={handleTogglePumpRunningById}
             onRefillPump={handleRefillPumpById}
@@ -814,9 +1112,32 @@ export default function App() {
                           getPumpColorStyle(activeSyringe.color).swatchClass
                         }`}
                       />
-                      {activeSyringe.name} · Farmaco in infusione:
+                      {getPatientLabel(activeSyringe.patientId)} · {activeSyringe.name} · Farmaco in infusione:
                     </label>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2">
+                      <select
+                        aria-label="Assegna paziente"
+                        value={resolvePatientId(activeSyringe)}
+                        onChange={(e) => {
+                          const nextPatId = e.target.value;
+                          setSyringes((prev) =>
+                            prev.map((s) =>
+                              s.id === activeSyringe.id ? { ...s, patientId: nextPatId } : s
+                            )
+                          );
+                          if (selectedPatientId !== 'all') {
+                            setSelectedPatientId(nextPatId);
+                          }
+                        }}
+                        className="px-2 py-0.5 text-[11px] font-medium rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:outline-none"
+                      >
+                        {patients.map((pat) => (
+                          <option key={pat.id} value={pat.id}>
+                            {pat.label}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-center gap-1">
                       {PUMP_COLOR_OPTIONS.slice(0, 5).map((opt) => (
                         <button
                           key={opt.id}
@@ -840,6 +1161,7 @@ export default function App() {
                           }`}
                         />
                       ))}
+                    </div>
                     </div>
                   </div>
                   <input
@@ -1324,6 +1646,11 @@ export default function App() {
                         getPumpColorStyle(nextExpiringPump.syringe.color).swatchClass
                       }`}
                     />
+                    {selectedPatientId === 'all' && (
+                      <span className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400">
+                        {nextExpiringPump.patientLabel} ·
+                      </span>
+                    )}
                     <span className="text-xs font-mono font-bold text-slate-400">
                       #{nextExpiringPump.index}
                     </span>
@@ -1455,11 +1782,13 @@ export default function App() {
             ) : (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <p className="text-xs font-mono text-slate-500 dark:text-slate-400">
-                  {syringes.length === 0
-                    ? 'Nessuna pompa impostata (inizio turno). Aggiungi la prima pompa per iniziare.'
+                  {visibleSyringes.length === 0
+                    ? selectedPatientId === 'all'
+                      ? 'Nessuna pompa impostata (inizio turno). Aggiungi la prima pompa per iniziare.'
+                      : `Nessuna pompa impostata per ${getPatientLabel(selectedPatientId)}. Aggiungi una pompa per iniziare.`
                     : 'Nessuna infusione attiva con volume residuo disponibile.'}
                 </p>
-                {syringes.length === 0 && (
+                {visibleSyringes.length === 0 && (
                   <button
                     type="button"
                     onClick={handleAddSyringe}
@@ -1475,9 +1804,11 @@ export default function App() {
 
           {/* Multi-Pump Shift Replacement List */}
           <ReplacementsTimeline
-            syringes={syringes}
+            syringes={visibleSyringes}
             currentTime={currentTime}
             shiftEndDate={shiftEndDate}
+            patients={patients}
+            selectedPatientId={selectedPatientId}
             onOpenPumpDetail={(id) => {
               soundManager.playClick();
               setActiveSyringeId(id);
@@ -1502,9 +1833,12 @@ export default function App() {
           setRateInput(formatVolume(rate));
           if (!activeSyringe) {
             const newId = `syr-${Date.now()}`;
+            const targetPatId =
+              selectedPatientId === 'all' ? defaultPatientId : selectedPatientId;
             const newSyringe: SyringeData = {
               id: newId,
-              name: 'Pompa 1',
+              patientId: targetPatId,
+              name: `Pompa ${visibleSyringes.length + 1}`,
               drugName: 'Nuova Infusione',
               nominalVolume: 50,
               currentVolume: 50,
@@ -1516,7 +1850,7 @@ export default function App() {
               alertMinutesBefore: 15,
               soundEnabled: true
             };
-            setSyringes([newSyringe]);
+            setSyringes((prev) => [...prev, newSyringe]);
             setActiveSyringeId(newId);
             navigateToView('detail');
             return;
@@ -1539,7 +1873,11 @@ export default function App() {
       <AddPumpModal
         isOpen={isAddPumpOpen}
         onClose={() => setIsAddPumpOpen(false)}
-        nextPumpNumber={syringes.length + 1}
+        nextPumpNumber={visibleSyringes.length + 1}
+        patients={patients}
+        defaultPatientId={
+          selectedPatientId === 'all' ? defaultPatientId : selectedPatientId
+        }
         onConfirmAdd={handleConfirmAddSyringe}
       />
 
@@ -1547,12 +1885,13 @@ export default function App() {
       <StartupSessionModal
         isOpen={isStartupPromptOpen}
         syringes={syringes}
+        patients={patients}
         onKeepSaved={() => {
           soundManager.playClick();
           setIsStartupPromptOpen(false);
         }}
         onStartFromZero={() => {
-          handleClearAllSyringes();
+          handleResetAllOnStartup();
           setIsStartupPromptOpen(false);
           navigateToView('list');
         }}

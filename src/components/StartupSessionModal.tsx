@@ -5,12 +5,13 @@
 
 import React from 'react';
 import { Check, Trash2, Clock } from 'lucide-react';
-import { SyringeData } from '../types';
+import { PatientProfile, SyringeData } from '../types';
 import { formatVolume } from '../utils/calculations';
 
 interface StartupSessionModalProps {
   isOpen: boolean;
   syringes: SyringeData[];
+  patients?: PatientProfile[];
   onKeepSaved: () => void;
   onStartFromZero: () => void;
 }
@@ -18,6 +19,7 @@ interface StartupSessionModalProps {
 export const StartupSessionModal: React.FC<StartupSessionModalProps> = ({
   isOpen,
   syringes,
+  patients,
   onKeepSaved,
   onStartFromZero
 }) => {
@@ -25,6 +27,11 @@ export const StartupSessionModal: React.FC<StartupSessionModalProps> = ({
 
   const visiblePumps = syringes.slice(0, 4);
   const remainingCount = syringes.length - visiblePumps.length;
+  const getPatientLabel = (patId?: string) => {
+    if (!patients || patients.length === 0) return null;
+    const found = patients.find((p) => p.id === patId) || patients[0];
+    return found?.label ?? null;
+  };
 
   return (
     <div
@@ -62,7 +69,9 @@ export const StartupSessionModal: React.FC<StartupSessionModalProps> = ({
           </div>
 
           <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 divide-y divide-slate-200/70 dark:divide-slate-800">
-            {visiblePumps.map((syr, idx) => (
+            {visiblePumps.map((syr, idx) => {
+              const patLabel = getPatientLabel(syr.patientId);
+              return (
               <div
                 key={syr.id}
                 className="px-3 py-2 flex items-center justify-between gap-2 text-xs"
@@ -71,6 +80,11 @@ export const StartupSessionModal: React.FC<StartupSessionModalProps> = ({
                   <span className="font-mono font-bold text-slate-400 shrink-0">
                     #{idx + 1}
                   </span>
+                  {patLabel && (
+                    <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 shrink-0">
+                      {patLabel} ·
+                    </span>
+                  )}
                   <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
                     {syr.drugName || 'Farmaco'}
                   </span>
@@ -80,7 +94,8 @@ export const StartupSessionModal: React.FC<StartupSessionModalProps> = ({
                   {formatVolume(syr.infusionRate)} ml/h
                 </span>
               </div>
-            ))}
+              );
+            })}
             {remainingCount > 0 && (
               <div className="px-3 py-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 text-center">
                 + {remainingCount} {remainingCount === 1 ? 'altra pompa' : 'altre pompe'}

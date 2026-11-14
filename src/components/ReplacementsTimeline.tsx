@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { SyringeData } from '../types';
+import { PatientProfile, SyringeData } from '../types';
 import {
   computeSyringeCalculations,
   formatVolume,
@@ -27,6 +27,8 @@ interface ReplacementsTimelineProps {
   syringes: SyringeData[];
   currentTime: Date;
   shiftEndDate: Date;
+  patients?: PatientProfile[];
+  selectedPatientId?: string;
   onOpenPumpDetail?: (id: string) => void;
   onTogglePumpAlarm?: (id: string) => void;
 }
@@ -35,12 +37,20 @@ export const ReplacementsTimeline: React.FC<ReplacementsTimelineProps> = ({
   syringes,
   currentTime,
   shiftEndDate,
+  patients,
+  selectedPatientId,
   onOpenPumpDetail,
   onTogglePumpAlarm
 }) => {
+  const getPatientLabel = (patId?: string) => {
+    if (!patients || patients.length === 0) return null;
+    const found = patients.find((p) => p.id === patId) || patients[0];
+    return found?.label ?? null;
+  };
   const pumpEntries = syringes.map((syringe, index) => ({
     index: index + 1,
     syringe,
+    patientLabel: getPatientLabel(syringe.patientId),
     calculations: computeSyringeCalculations(syringe, currentTime, shiftEndDate)
   }));
 
@@ -81,7 +91,7 @@ export const ReplacementsTimeline: React.FC<ReplacementsTimelineProps> = ({
         </div>
       ) : (
       <div className="divide-y divide-slate-100 dark:divide-slate-800">
-        {pumpEntries.map(({ index, syringe, calculations }) => {
+        {pumpEntries.map(({ index, syringe, patientLabel, calculations }) => {
           const {
             coversFullShift,
             syringesNeededForShift,
@@ -125,6 +135,11 @@ export const ReplacementsTimeline: React.FC<ReplacementsTimelineProps> = ({
                       aria-hidden="true"
                       className={`w-3 h-3 rounded-[3px] shrink-0 ${colorStyle.swatchClass}`}
                     />
+                    {selectedPatientId === 'all' && patientLabel && (
+                      <span className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400">
+                        {patientLabel} ·
+                      </span>
+                    )}
                     <span className="text-xs font-mono font-bold text-slate-400">
                       #{index}
                     </span>

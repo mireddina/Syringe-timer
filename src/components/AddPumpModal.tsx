@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Plus, X, AlertCircle, AlertTriangle, Play, Pause, Sparkles } from 'lucide-react';
-import { DoseConfig, SyringeData } from '../types';
+import { DoseConfig, PatientProfile, SyringeData } from '../types';
 import { formatVolume, formatHoursToHms, parseVolume } from '../utils/calculations';
 import { computeDoseFlow, checkPresetRateLimit } from '../utils/dose';
 import {
@@ -20,6 +20,8 @@ interface AddPumpModalProps {
   isOpen: boolean;
   onClose: () => void;
   nextPumpNumber: number;
+  patients?: PatientProfile[];
+  defaultPatientId?: string;
   onConfirmAdd: (newSyringe: SyringeData) => void;
 }
 
@@ -51,8 +53,13 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
   isOpen,
   onClose,
   nextPumpNumber,
+  patients,
+  defaultPatientId,
   onConfirmAdd
 }) => {
+  const [patientId, setPatientId] = useState<string>(
+    defaultPatientId || patients?.[0]?.id || 'pat-1'
+  );
   const [selectedPresetId, setSelectedPresetId] = useState<string>('');
   const [drugName, setDrugName] = useState<string>('');
   const [concentrationNote, setConcentrationNote] = useState<string>('');
@@ -72,6 +79,7 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
   // Reset form cleanly whenever modal opens
   useEffect(() => {
     if (isOpen) {
+      setPatientId(defaultPatientId || patients?.[0]?.id || 'pat-1');
       setSelectedPresetId('');
       setDrugName('');
       setConcentrationNote('');
@@ -86,7 +94,7 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
       setPresetDoseValue('');
       setFormError(null);
     }
-  }, [isOpen, nextPumpNumber]);
+  }, [isOpen, nextPumpNumber, defaultPatientId, patients]);
 
   if (!isOpen) return null;
 
@@ -250,6 +258,7 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
 
     const newSyringe: SyringeData = {
       id: `syr-${Date.now()}`,
+      patientId,
       name: `Pompa ${nextPumpNumber}`,
       drugName: cleanDrug,
       nominalVolume: parsedNominal,
@@ -299,6 +308,34 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
 
         {/* Body */}
         <div className="p-4 space-y-4 overflow-y-auto">
+          {/* Patient Assignment */}
+          {patients && patients.length > 0 && (
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                Paziente / Letto
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {patients.map((pat) => {
+                  const isActivePat = patientId === pat.id;
+                  return (
+                    <button
+                      key={pat.id}
+                      type="button"
+                      onClick={() => setPatientId(pat.id)}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-semibold truncate transition-colors cursor-pointer ${
+                        isActivePat
+                          ? 'border-blue-600 bg-blue-600 text-white shadow-xs'
+                          : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {pat.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Drug Preset Picker */}
           <div className="space-y-1.5">
             <label

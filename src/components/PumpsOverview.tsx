@@ -20,7 +20,7 @@ import {
   Bell,
   BellOff
 } from 'lucide-react';
-import { SyringeData } from '../types';
+import { PatientProfile, SyringeData } from '../types';
 import {
   computeSyringeCalculations,
   formatVolume,
@@ -34,6 +34,8 @@ interface PumpsOverviewProps {
   activeSyringeId: string;
   currentTime: Date;
   shiftEndDate: Date;
+  patients?: PatientProfile[];
+  selectedPatientId?: string;
   onSelectPump: (id: string) => void;
   onToggleRunning: (id: string) => void;
   onRefillPump: (id: string) => void;
@@ -49,6 +51,8 @@ export const PumpsOverview: React.FC<PumpsOverviewProps> = ({
   activeSyringeId,
   currentTime,
   shiftEndDate,
+  patients,
+  selectedPatientId,
   onSelectPump,
   onToggleRunning,
   onRefillPump,
@@ -59,9 +63,19 @@ export const PumpsOverview: React.FC<PumpsOverviewProps> = ({
   onTogglePumpAlarm
 }) => {
   const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const selectedPatient =
+    selectedPatientId && selectedPatientId !== 'all'
+      ? patients?.find((p) => p.id === selectedPatientId)
+      : null;
+  const getPatientLabel = (patId?: string) => {
+    if (!patients || patients.length === 0) return null;
+    const found = patients.find((p) => p.id === patId) || patients[0];
+    return found?.label ?? null;
+  };
   const rows = syringes.map((syr, idx) => ({
     index: idx + 1,
     syringe: syr,
+    patientLabel: getPatientLabel(syr.patientId),
     calcs: computeSyringeCalculations(syr, currentTime, shiftEndDate)
   }));
 
@@ -82,7 +96,7 @@ export const PumpsOverview: React.FC<PumpsOverviewProps> = ({
             <div className="flex items-center gap-2">
               <ListChecks className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               <h1 className="text-sm font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider font-mono">
-                Elenco Pompe
+                Elenco Pompe{selectedPatient ? ` · ${selectedPatient.label}` : ''}
               </h1>
             </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400 font-mono">
@@ -121,7 +135,9 @@ export const PumpsOverview: React.FC<PumpsOverviewProps> = ({
         {confirmClearAll && rows.length > 0 && (
           <div className="mt-3 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/70 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <span className="text-xs font-medium text-rose-900 dark:text-rose-200">
-              Cancellare tutte le {rows.length} {rows.length === 1 ? 'pompa' : 'pompe'} e ripartire da 0?
+              {selectedPatient
+                ? `Cancellare tutte le ${rows.length} ${rows.length === 1 ? 'pompa' : 'pompe'} di ${selectedPatient.label} e ripartire da 0?`
+                : `Cancellare tutte le ${rows.length} ${rows.length === 1 ? 'pompa' : 'pompe'} di tutti i pazienti e ripartire da 0?`}
             </span>
             <div className="flex items-center gap-2 shrink-0">
               <button
@@ -235,7 +251,7 @@ export const PumpsOverview: React.FC<PumpsOverviewProps> = ({
         </div>
       ) : (
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden">
-        {rows.map(({ index, syringe, calcs }) => {
+        {rows.map(({ index, syringe, patientLabel, calcs }) => {
           const isSelected = syringe.id === activeSyringeId;
           const statusText = calcs.isFinished
             ? 'Esaurita'
@@ -284,11 +300,16 @@ export const PumpsOverview: React.FC<PumpsOverviewProps> = ({
                       onClick={() => onSelectPump(syringe.id)}
                       className="text-left group min-w-0"
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <span
                           aria-hidden="true"
                           className={`w-3 h-3 rounded-[3px] shrink-0 ${colorStyle.swatchClass}`}
                         />
+                        {selectedPatientId === 'all' && patientLabel && (
+                          <span className="text-xs font-mono font-semibold text-slate-500 dark:text-slate-400">
+                            {patientLabel} ·
+                          </span>
+                        )}
                         <span className="text-xs font-mono font-bold text-slate-400">
                           #{index}
                         </span>
