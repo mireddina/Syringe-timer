@@ -64,7 +64,10 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
   const [drugName, setDrugName] = useState<string>('');
   const [concentrationNote, setConcentrationNote] = useState<string>('');
   const [nominalInput, setNominalInput] = useState<string>('50');
+  const [residualMode, setResidualMode] = useState<'volume' | 'time'>('volume');
   const [currentInput, setCurrentInput] = useState<string>('50');
+  const [remainingHoursInput, setRemainingHoursInput] = useState<string>('25');
+  const [remainingMinutesInput, setRemainingMinutesInput] = useState<string>('0');
   const [isCurrentSynced, setIsCurrentSynced] = useState<boolean>(true);
   const [rateInput, setRateInput] = useState<string>('2');
   const [color, setColor] = useState<string>('emerald');
@@ -84,7 +87,10 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
       setDrugName('');
       setConcentrationNote('');
       setNominalInput('50');
+      setResidualMode('volume');
       setCurrentInput('50');
+      setRemainingHoursInput('25');
+      setRemainingMinutesInput('0');
       setIsCurrentSynced(true);
       setRateInput('2');
       setColor(COLOR_OPTIONS[(nextPumpNumber - 1) % COLOR_OPTIONS.length].id);
@@ -100,19 +106,57 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
 
   const activePreset = DRUG_PRESETS.find((p) => p.id === selectedPresetId) || null;
   const parsedNominal = parseVolume(nominalInput);
-  const parsedCurrentRaw = parseFloat(currentInput.replace(',', '.'));
   const parsedRate = parseVolume(rateInput);
+
+  const parsedHoursRaw =
+    remainingHoursInput.trim() === ''
+      ? 0
+      : parseFloat(remainingHoursInput.replace(',', '.'));
+  const parsedMinutesRaw =
+    remainingMinutesInput.trim() === ''
+      ? 0
+      : parseFloat(remainingMinutesInput.replace(',', '.'));
+  const hasAnyTimeInput =
+    remainingHoursInput.trim() !== '' || remainingMinutesInput.trim() !== '';
+  const isTimeInputValid =
+    hasAnyTimeInput &&
+    !isNaN(parsedHoursRaw) &&
+    !isNaN(parsedMinutesRaw) &&
+    isFinite(parsedHoursRaw) &&
+    isFinite(parsedMinutesRaw) &&
+    parsedHoursRaw >= 0 &&
+    parsedMinutesRaw >= 0;
+
+  const computedVolumeFromTime =
+    residualMode === 'time' && isTimeInputValid && parsedRate !== null && parsedRate > 0
+      ? Math.round(parsedRate * (parsedHoursRaw + parsedMinutesRaw / 60) * 100) / 100
+      : null;
+
+  const parsedCurrentRaw =
+    residualMode === 'time'
+      ? computedVolumeFromTime ?? NaN
+      : parseFloat(currentInput.replace(',', '.'));
+
+  const isTimeExceedingNominal =
+    residualMode === 'time' &&
+    computedVolumeFromTime !== null &&
+    parsedNominal !== null &&
+    computedVolumeFromTime > parsedNominal + 0.001;
 
   const isCurrentValid =
     parsedNominal !== null &&
     !isNaN(parsedCurrentRaw) &&
     isFinite(parsedCurrentRaw) &&
     parsedCurrentRaw >= 0 &&
-    parsedCurrentRaw <= parsedNominal;
+    parsedCurrentRaw <= parsedNominal + 0.001;
+
+  const clampedCurrent = isCurrentValid
+    ? Math.min(parsedNominal!, parsedCurrentRaw)
+    : NaN;
 
   const previewDuration =
     parsedRate !== null && isCurrentValid
-      ? formatHoursToHms(parsedCurrentRaw / parsedRate)
+      ? formatHoursToHms(clampedCurrent / parsedRate)
       : '--';
 
   const computeRateFromPresetDose = (
@@ -206,6 +250,31 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
     handleNominalChange(vol.toString());
   };
 
+  const switchResidualMode = (nextMode: 'volume' | 'time') => {
+    setResidualMode(nextMode);
+    setFormError(null);
+    if (nextMode === 'time') {
+      setIsCurrentSynced(false);
+      const curr = parseFloat(currentInput.replace(',', '.'));
+      if (!isNaN(curr) && curr >= 0 && parsedRate !== null && parsedRate > 0) {
+        const totalMinutes = Math.round((curr / parsedRate) * 60);
+        const hrs = Math.floor(totalMinutes / 60);
+        const mins = totalMinutes % 60;
+        setRemainingHoursInput(hrs.toString());
+        setRemainingMinutesInput(mins.toString());
+      } else {
+        setRemainingHoursInput('0');
+        setRemainingMinutesInput('0');
+      }
+    } else if (computedVolumeFromTime !== null) {
+      const capped =
+        parsedNominal !== null
+          ? Math.min(parsedNominal, computedVolumeFromTime)
+          : computedVolumeFromTime;
+      setCurrentInput(formatVolume(capped));
+    }
+  };
+
   const handleCurrentChange = (val: string) => {
     setCurrentInput(val);
     setFormError(null);
@@ -229,14 +298,25 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
       setFormError('Inserisci un volume nominale valido maggiore di 0 ml.');
       return;
     }
-    if (!isCurrentValid) {
+    if (parsedRate === null || parsedRate <= 0) {
+      setFormError('Inserisci una velocità di infusione valida maggiore di 0 ml/h.');
+      return;
+    }
+    if (residualMode === 'time') {
+      if (!isTimeInputValid) {
+        setFormError('Inserisci un tempo residuo valido (ore e/o minuti).');
+        return;
+      }
+      if (isTimeExceedingNominal && computedVolumeFromTime !== null) {
+        setFormError(
+          `Il tempo residuo inserito equivale a ${formatVolume(computedVolumeFromTime)} ml, superiore al volume nominale (${formatVolume(parsedNominal)} ml).`
+        );
+        return;
+      }
+    } else if (!isCurrentValid) {
       setFormError(
         `Il volume residuo deve essere compreso tra 0 e ${formatVolume(parsedNominal)} ml.`
       );
-      return;
-    }
-    if (parsedRate === null || parsedRate <= 0) {
-      setFormError('Inserisci una velocità di infusione valida maggiore di 0 ml/h.');
       return;
     }
 
@@ -262,7 +342,7 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
       name: `Pompa ${nextPumpNumber}`,
       drugName: cleanDrug,
       nominalVolume: parsedNominal,
-      currentVolume: parsedCurrentRaw,
+      currentVolume: clampedCurrent,
       infusionRate: parsedRate,
       concentration: concentrationNote || undefined,
       doseConfig,
@@ -507,44 +587,130 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
             </div>
           </div>
 
-          {/* Current Residual Volume & Infusion Rate */}
+          {/* Current Residual Volume OR Remaining Time + Infusion Rate */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label
-                  htmlFor="new-pump-current"
-                  className="text-xs font-semibold text-slate-800 dark:text-slate-200"
-                >
-                  Volume Residuo (ml)
-                </label>
-                {parsedNominal !== null && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                  {residualMode === 'volume' ? 'Volume Residuo (ml)' : 'Tempo Residuo'}
+                </span>
+                {residualMode === 'volume' && parsedNominal !== null && (
                   <button
                     type="button"
                     onClick={() => {
                       setCurrentInput(formatVolume(parsedNominal));
                       setIsCurrentSynced(true);
                     }}
-                    className="text-[11px] font-mono text-blue-600 dark:text-blue-400 hover:underline"
+                    className="text-[11px] font-mono text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
                   >
                     Piena ({formatVolume(parsedNominal)})
                   </button>
                 )}
               </div>
-              <div className="relative">
-                <input
-                  id="new-pump-current"
-                  type="number"
-                  step="any"
-                  min="0"
-                  max={parsedNominal ?? undefined}
-                  value={currentInput}
-                  onChange={(e) => handleCurrentChange(e.target.value)}
-                  className="w-full px-3 pr-9 py-1.5 text-sm font-bold font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400">
-                  ml
-                </span>
+
+              {/* Mode toggle: Volume vs Tempo residuo */}
+              <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={() => switchResidualMode('volume')}
+                  className={`py-1 px-2 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                    residualMode === 'volume'
+                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Da Volume (ml)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchResidualMode('time')}
+                  className={`py-1 px-2 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                    residualMode === 'time'
+                      ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Da Tempo (h / min)
+                </button>
               </div>
+
+              {residualMode === 'volume' ? (
+                <div className="relative">
+                  <input
+                    id="new-pump-current"
+                    type="number"
+                    step="any"
+                    min="0"
+                    max={parsedNominal ?? undefined}
+                    value={currentInput}
+                    onChange={(e) => handleCurrentChange(e.target.value)}
+                    className="w-full px-3 pr-9 py-1.5 text-sm font-bold font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400">
+                    ml
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="relative">
+                      <input
+                        id="new-pump-rem-hours"
+                        aria-label="Ore residue"
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={remainingHoursInput}
+                        onChange={(e) => {
+                          setRemainingHoursInput(e.target.value);
+                          setFormError(null);
+                        }}
+                        placeholder="0"
+                        className="w-full px-2.5 pr-8 py-1.5 text-sm font-bold font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400">
+                        ore
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        id="new-pump-rem-minutes"
+                        aria-label="Minuti residui"
+                        type="number"
+                        step="1"
+                        min="0"
+                        value={remainingMinutesInput}
+                        onChange={(e) => {
+                          setRemainingMinutesInput(e.target.value);
+                          setFormError(null);
+                        }}
+                        placeholder="0"
+                        className="w-full px-2.5 pr-9 py-1.5 text-sm font-bold font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400">
+                        min
+                      </span>
+                    </div>
+                  </div>
+                  {computedVolumeFromTime !== null ? (
+                    <p
+                      className={`text-[11px] font-mono tabular-nums font-semibold ${
+                        isTimeExceedingNominal
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-blue-600 dark:text-blue-400'
+                      }`}
+                    >
+                      Volume calcolato: {formatVolume(computedVolumeFromTime)} ml
+                      {parsedNominal !== null ? ` / ${formatVolume(parsedNominal)} ml` : ''}
+                      {isTimeExceedingNominal ? ' (oltre nominale)' : ''}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] font-mono text-slate-400">
+                      Inserisci ore/minuti e velocità per calcolare i ml
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">
