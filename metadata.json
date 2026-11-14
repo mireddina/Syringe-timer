@@ -1,0 +1,6 @@
+{
+  "name": "Syringe Timer",
+  "description": "Calcolatore clinico per pompe siringa: durata infusione, volume residuo in tempo reale e ricambi siringa fino a fine turno con supporto a volumi siringa personalizzati.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
