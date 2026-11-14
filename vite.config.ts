@@ -50,6 +50,9 @@ export default defineConfig(() => {
         },
         workbox: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          cleanupOutdatedCaches: true,
+          clientsClaim: true,
+          skipWaiting: true,
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -87,6 +90,10 @@ export default defineConfig(() => {
         },
       }),
     ],
+    build: {
+      target: ['es2019', 'chrome79', 'safari13'],
+      cssTarget: ['chrome79', 'safari13'],
+    },
     resolve: {
       alias: {
         '@': path.resolve(import.meta.dirname, '.'),

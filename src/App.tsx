@@ -109,10 +109,17 @@ export default function App() {
   // Theme state
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
-      return (
-        localStorage.getItem('syringe_theme') === 'dark' ||
-        window.matchMedia('(prefers-color-scheme: dark)').matches
-      );
+      try {
+        const stored = localStorage.getItem('syringe_theme');
+        if (stored === 'dark') return true;
+        if (stored === 'light') return false;
+        return (
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+        );
+      } catch {
+        return false;
+      }
     }
     return false;
   });
@@ -157,12 +164,16 @@ export default function App() {
 
   // Apply dark mode class to html element
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('syringe_theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('syringe_theme', 'light');
+    try {
+      if (isDarkMode) {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('syringe_theme', 'dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('syringe_theme', 'light');
+      }
+    } catch {
+      // ignore storage errors in restricted tablet browsers
     }
   }, [isDarkMode]);
 

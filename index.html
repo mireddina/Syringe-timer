@@ -19,10 +19,70 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      if (!String.prototype.replaceAll) {
+        String.prototype.replaceAll = function (search, replacement) {
+          if (search instanceof RegExp) {
+            if (!search.global) {
+              throw new TypeError('replaceAll must be called with a global RegExp');
+            }
+            return this.replace(search, replacement);
+          }
+          return this.split(search).join(replacement);
+        };
+      }
+      window.__stErrors = [];
+      window.addEventListener('error', function (e) {
+        var msg = (e && e.message) || 'Errore script durante il caricamento';
+        window.__stErrors.push(msg);
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var reason = e && e.reason;
+        var msg = (reason && reason.message) || String(reason || 'Errore asincrono');
+        window.__stErrors.push(msg);
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      window.setTimeout(function () {
+        var root = document.getElementById('root');
+        if (!root || root.childElementCount > 0) return;
+        var errText = window.__stErrors && window.__stErrors.length
+          ? window.__stErrors.join(' | ')
+          : 'Impossibile avviare l\u2019applicazione su questo browser o cache non aggiornata.';
+        var box = document.createElement('div');
+        box.style.cssText = 'padding:24px;font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:32px auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;color:#0f172a;';
+        var h = document.createElement('h1');
+        h.style.cssText = 'font-size:18px;font-weight:700;margin:0 0 8px 0;';
+        h.textContent = 'Syringe Timer non si \u00e8 avviato';
+        var p = document.createElement('p');
+        p.style.cssText = 'font-size:13px;color:#475569;margin:0 0 16px 0;word-break:break-word;';
+        p.textContent = errText;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Ricarica e pulisci cache';
+        btn.style.cssText = 'background:#2563eb;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;';
+        btn.onclick = function () {
+          try {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                for (var i = 0; i < regs.length; i++) regs[i].unregister();
+                window.location.reload();
+              });
+              return;
+            }
+          } catch (e) {}
+          window.location.reload();
+        };
+        box.appendChild(h);
+        box.appendChild(p);
+        box.appendChild(btn);
+        root.appendChild(box);
+      }, 4500);
+    </script>
   </body>
 </html>
 
