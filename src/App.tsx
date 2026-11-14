@@ -124,8 +124,17 @@ export default function App() {
     return false;
   });
 
-  // Sound muted state
-  const [isSoundMuted, setIsSoundMuted] = useState<boolean>(false);
+  // Sound muted state (persisted in localStorage)
+  const [isSoundMuted, setIsSoundMuted] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return localStorage.getItem('syringe_sound_muted') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
 
   // Active Syringes (starts empty on first open; preserves [] if cleared)
   const [syringes, setSyringes] = useState<SyringeData[]>(() => loadSavedSyringes());
@@ -177,9 +186,14 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Keep audio manager in sync with mute state
+  // Keep audio manager and localStorage in sync with mute state
   useEffect(() => {
     soundManager.setMuted(isSoundMuted);
+    try {
+      localStorage.setItem('syringe_sound_muted', isSoundMuted ? 'true' : 'false');
+    } catch {
+      // ignore storage errors in restricted browsers
+    }
   }, [isSoundMuted]);
 
   // Save syringes state to localStorage
