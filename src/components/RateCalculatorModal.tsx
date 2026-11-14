@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Calculator, X, Check, AlertCircle, Sparkles } from 'lucide-react';
+import { Calculator, X, Check, AlertCircle, AlertTriangle, Sparkles } from 'lucide-react';
 import { formatVolume } from '../utils/calculations';
+import { checkPresetRateLimit } from '../utils/dose';
 import { DoseConfig } from '../types';
 import {
   DRUG_CATEGORIES,
@@ -566,21 +567,62 @@ export const RateCalculatorModal: React.FC<RateCalculatorModalProps> = ({
           )}
 
           {/* Result Card */}
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700/60">
-            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-              Velocità Risultante per la Pompa:
-            </span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-bold font-mono text-blue-600 dark:text-blue-400">
-                {computedRate !== null ? formatVolume(computedRate) : '--'}
+          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-lg border border-slate-200 dark:border-slate-700/60 space-y-2">
+            <div>
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Velocità Risultante per la Pompa:
               </span>
-              <span className="text-xs font-mono text-slate-500">ml/h</span>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-2xl font-bold font-mono text-blue-600 dark:text-blue-400">
+                  {computedRate !== null ? formatVolume(computedRate) : '--'}
+                </span>
+                <span className="text-xs font-mono text-slate-500">ml/h</span>
+              </div>
+              {formulaExplanation && (
+                <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1 break-all">
+                  {formulaExplanation}
+                </p>
+              )}
             </div>
-            {formulaExplanation && (
-              <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-1 break-all">
-                {formulaExplanation}
-              </p>
-            )}
+
+            {(() => {
+              const targetPreset = activePreset ?? findDrugPresetByName(activeDrugName);
+              if (!targetPreset || !computedRate || computedRate <= 0) return null;
+              const syrAmt = parseFloat(syringeDrugAmount.replace(',', '.'));
+              const weight = parseFloat(patientWeightKg.replace(',', '.'));
+              const rateWarning = checkPresetRateLimit(
+                {
+                  drugName: targetPreset.name,
+                  nominalVolume: safeNominal,
+                  infusionRate: computedRate,
+                  doseConfig:
+                    calcMode === 'dose' && targetPreset.flowMode !== 'direct_ml_h'
+                      ? {
+                          syringeDrugAmount:
+                            !isNaN(syrAmt) && syrAmt > 0 ? syrAmt : targetPreset.syringeDrugAmount,
+                          syringeDrugUnit,
+                          syringeVolumeMl: safeNominal,
+                          doseUnit,
+                          useWeight,
+                          patientWeightKg: !isNaN(weight) && weight > 0 ? weight : 70,
+                          timeBase,
+                          flowMode: 'dose'
+                        }
+                      : undefined
+                },
+                targetPreset
+              );
+              if (!rateWarning) return null;
+              return (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 text-xs text-amber-900 dark:text-amber-200 font-medium"
+                >
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <span>{rateWarning.message}</span>
+                </div>
+              );
+            })()}
           </div>
         </div>
 

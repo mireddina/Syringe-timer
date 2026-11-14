@@ -26,7 +26,7 @@ import {
   formatVolume,
   formatClockTime
 } from '../utils/calculations';
-import { computeDoseFlow } from '../utils/dose';
+import { computeDoseFlow, checkPresetRateLimit } from '../utils/dose';
 import { getPumpColorStyle } from '../utils/pumpColors';
 
 interface PumpsOverviewProps {
@@ -341,6 +341,19 @@ export const PumpsOverview: React.FC<PumpsOverviewProps> = ({
                       return (
                         <span className="text-[11px] font-mono tabular-nums font-semibold text-blue-600 dark:text-blue-400 block">
                           {doseFlow.formatted}
+                        </span>
+                      );
+                    })()}
+                    {(() => {
+                      const rateWarning = checkPresetRateLimit(syringe);
+                      if (!rateWarning) return null;
+                      return (
+                        <span
+                          role="alert"
+                          className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                        >
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          <span>Oltre max ({rateWarning.maxFormatted}): controlla</span>
                         </span>
                       );
                     })()}

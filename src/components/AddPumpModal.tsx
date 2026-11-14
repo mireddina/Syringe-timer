@@ -4,10 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Plus, X, AlertCircle, Play, Pause, Sparkles } from 'lucide-react';
+import { Plus, X, AlertCircle, AlertTriangle, Play, Pause, Sparkles } from 'lucide-react';
 import { DoseConfig, SyringeData } from '../types';
 import { formatVolume, formatHoursToHms, parseVolume } from '../utils/calculations';
-import { computeDoseFlow } from '../utils/dose';
+import { computeDoseFlow, checkPresetRateLimit } from '../utils/dose';
 import {
   DRUG_CATEGORIES,
   DRUG_PRESETS,
@@ -538,11 +538,8 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
                 if (!activePreset || parsedRate === null || parsedNominal === null) return null;
                 const parsedWeight = parseFloat(presetWeightKg.replace(',', '.'));
                 const previewDose = computeDoseFlow({
-                  id: 'preview',
-                  name: 'Preview',
                   drugName: drugName || activePreset.name,
                   nominalVolume: parsedNominal,
-                  currentVolume: parsedNominal,
                   infusionRate: parsedRate,
                   doseConfig: {
                     syringeDrugAmount: activePreset.syringeDrugAmount,
@@ -556,11 +553,7 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
                     patientWeightKg: !isNaN(parsedWeight) && parsedWeight > 0 ? parsedWeight : 70,
                     timeBase: activePreset.timeBase,
                     flowMode: activePreset.flowMode
-                  },
-                  color,
-                  isRunning: true,
-                  alertMinutesBefore: 15,
-                  soundEnabled: true
+                  }
                 });
                 if (!previewDose) return null;
                 return (
@@ -593,6 +586,44 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
               );
             })}
           </div>
+
+          {(() => {
+            const matchedPreset = activePreset ?? findDrugPresetByName(drugName);
+            if (!matchedPreset || parsedRate === null || parsedRate <= 0) return null;
+            const parsedWeight = parseFloat(presetWeightKg.replace(',', '.'));
+            const nom = parsedNominal && parsedNominal > 0 ? parsedNominal : matchedPreset.nominalVolume;
+            const rateWarning = checkPresetRateLimit(
+              {
+                drugName: drugName || matchedPreset.name,
+                nominalVolume: nom,
+                infusionRate: parsedRate,
+                doseConfig: {
+                  syringeDrugAmount: matchedPreset.syringeDrugAmount,
+                  syringeDrugUnit: matchedPreset.syringeDrugUnit,
+                  syringeVolumeMl:
+                    matchedPreset.flowMode === 'direct_ml_h'
+                      ? matchedPreset.nominalVolume
+                      : nom,
+                  doseUnit: matchedPreset.doseUnit,
+                  useWeight: matchedPreset.useWeight,
+                  patientWeightKg: !isNaN(parsedWeight) && parsedWeight > 0 ? parsedWeight : 70,
+                  timeBase: matchedPreset.timeBase,
+                  flowMode: matchedPreset.flowMode
+                }
+              },
+              matchedPreset
+            );
+            if (!rateWarning) return null;
+            return (
+              <div
+                role="alert"
+                className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 text-xs text-amber-900 dark:text-amber-200 font-medium"
+              >
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <span>{rateWarning.message}</span>
+              </div>
+            );
+          })()}
 
           {/* Color, Pre-alarm & Initial Running State */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">

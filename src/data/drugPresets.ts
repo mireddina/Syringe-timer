@@ -28,6 +28,8 @@ export interface DrugPreset {
   useWeight: boolean;
   timeBase: TimeBase;
   dosageRangeText: string;
+  maxDose?: number;
+  maxRateMlH?: number;
   defaultDose: number;
   defaultRateMlH: number;
   suggestedColor: 'sky' | 'emerald' | 'amber' | 'violet' | 'rose';
@@ -60,6 +62,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '4,5 - 29,5 µg/kg/min',
+    maxDose: 29.5,
     defaultDose: 10,
     defaultRateMlH: 4.2,
     suggestedColor: 'sky'
@@ -78,6 +81,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '8 - 10 µg/kg/min',
+    maxDose: 10,
     defaultDose: 8,
     defaultRateMlH: 3.4,
     suggestedColor: 'sky'
@@ -96,6 +100,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '1 - 3 µg/kg/min',
+    maxDose: 3,
     defaultDose: 2,
     defaultRateMlH: 4.2,
     suggestedColor: 'sky'
@@ -116,6 +121,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'hour',
     dosageRangeText: '2 - 4 µg/kg/h',
+    maxDose: 4,
     defaultDose: 2,
     defaultRateMlH: 14,
     suggestedColor: 'amber'
@@ -134,6 +140,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,02 - 0,15 µg/kg/min',
+    maxDose: 0.15,
     defaultDose: 0.05,
     defaultRateMlH: 4.2,
     suggestedColor: 'amber'
@@ -154,6 +161,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'hour',
     dosageRangeText: '0,05 mg/kg/h',
+    maxDose: 0.05,
     defaultDose: 0.05,
     defaultRateMlH: 3.5,
     suggestedColor: 'violet'
@@ -172,6 +180,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'hour',
     dosageRangeText: '2 - 6 mg/kg/h',
+    maxDose: 6,
     defaultDose: 3,
     defaultRateMlH: 10.5,
     suggestedColor: 'violet'
@@ -190,6 +199,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'hour',
     dosageRangeText: '0,2 - 1,4 µg/kg/h',
+    maxDose: 1.4,
     defaultDose: 0.7,
     defaultRateMlH: 6.1,
     suggestedColor: 'violet'
@@ -210,6 +220,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,01 - 2,8 µg/kg/min',
+    maxDose: 2.8,
     defaultDose: 0.1,
     defaultRateMlH: 2.1,
     suggestedColor: 'rose'
@@ -228,6 +239,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,01 - 1,2 µg/kg/min',
+    maxDose: 1.2,
     defaultDose: 0.1,
     defaultRateMlH: 2.1,
     suggestedColor: 'rose'
@@ -246,6 +258,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,01 - 1,2 µg/kg/min',
+    maxDose: 1.2,
     defaultDose: 0.1,
     defaultRateMlH: 2.6,
     suggestedColor: 'rose'
@@ -264,6 +277,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '2 - 20 µg/kg/min',
+    maxDose: 20,
     defaultDose: 5,
     defaultRateMlH: 4.2,
     suggestedColor: 'rose'
@@ -282,6 +296,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '1 - 20 µg/kg/min',
+    maxDose: 20,
     defaultDose: 5,
     defaultRateMlH: 5.3,
     suggestedColor: 'rose'
@@ -300,6 +315,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,02 - 0,04 µg/kg/min',
+    maxDose: 0.04,
     defaultDose: 0.03,
     defaultRateMlH: 3.7,
     suggestedColor: 'rose'
@@ -318,6 +334,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,05 - 0,5 µg/kg/min',
+    maxDose: 0.5,
     defaultDose: 0.1,
     defaultRateMlH: 21,
     suggestedColor: 'rose'
@@ -336,6 +353,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: false,
     timeBase: 'hour',
     dosageRangeText: '0,75 - 2,25 ml/h',
+    maxRateMlH: 2.25,
     defaultDose: 1,
     defaultRateMlH: 1.5,
     suggestedColor: 'rose'
@@ -356,6 +374,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,15 - 4 µg/kg/min',
+    maxDose: 4,
     defaultDose: 0.5,
     defaultRateMlH: 2.1,
     suggestedColor: 'amber'
@@ -374,6 +393,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '0,3 - 8 mg/kg/min',
+    maxDose: 8,
     defaultDose: 0.5,
     defaultRateMlH: 3,
     suggestedColor: 'amber'
@@ -412,6 +432,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'hour',
     dosageRangeText: '0,25 - 1,75 mg/kg/h (aPTT)',
+    maxDose: 1.75,
     defaultDose: 0.5,
     defaultRateMlH: 7,
     suggestedColor: 'emerald'
@@ -432,6 +453,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '25 - 300 µg/kg/min',
+    maxDose: 300,
     defaultDose: 50,
     defaultRateMlH: 21,
     suggestedColor: 'violet'
@@ -450,6 +472,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: true,
     timeBase: 'min',
     dosageRangeText: '1 - 40 µg/kg/min',
+    maxDose: 40,
     defaultDose: 10,
     defaultRateMlH: 7,
     suggestedColor: 'violet'
@@ -470,6 +493,7 @@ export const DRUG_PRESETS: DrugPreset[] = [
     useWeight: false,
     timeBase: 'min',
     dosageRangeText: '5 - 20 µg/min',
+    maxDose: 20,
     defaultDose: 10,
     defaultRateMlH: 6,
     suggestedColor: 'emerald'

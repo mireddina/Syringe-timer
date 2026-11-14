@@ -10,7 +10,7 @@ import {
   formatVolume,
   formatClockTime
 } from '../utils/calculations';
-import { computeDoseFlow } from '../utils/dose';
+import { computeDoseFlow, checkPresetRateLimit } from '../utils/dose';
 import { getPumpColorStyle } from '../utils/pumpColors';
 import {
   AlertTriangle,
@@ -161,6 +161,19 @@ export const ReplacementsTimeline: React.FC<ReplacementsTimelineProps> = ({
                       Fine turno alle {shiftEnd ? formatClockTime(shiftEnd) : '--:--'}
                     </span>
                   </div>
+                  {(() => {
+                    const rateWarning = checkPresetRateLimit(syringe);
+                    if (!rateWarning) return null;
+                    return (
+                      <div
+                        role="alert"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 text-[11px] text-amber-900 dark:text-amber-200 font-medium mt-1"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>{rateWarning.message}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 shrink-0">

@@ -12,6 +12,7 @@ import {
   VolumeX,
   Calculator,
   AlertCircle,
+  AlertTriangle,
   Bell,
   BellOff,
   Sun,
@@ -31,7 +32,7 @@ import {
   formatClockTime,
   parseVolume
 } from './utils/calculations';
-import { computeDoseFlow } from './utils/dose';
+import { computeDoseFlow, checkPresetRateLimit } from './utils/dose';
 import { getPumpColorStyle, PUMP_COLOR_OPTIONS } from './utils/pumpColors';
 import { soundManager } from './utils/audio';
 import { ShiftManager } from './components/ShiftManager';
@@ -1147,6 +1148,20 @@ export default function App() {
                     );
                   })}
                 </div>
+
+                {(() => {
+                  const rateWarning = checkPresetRateLimit(activeSyringe);
+                  if (!rateWarning) return null;
+                  return (
+                    <div
+                      role="alert"
+                      className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 text-xs text-amber-900 dark:text-amber-200 font-medium"
+                    >
+                      <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <span>{rateWarning.message}</span>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Pre-alarm setting & per-pump alarm silence */}
@@ -1315,6 +1330,19 @@ export default function App() {
                       );
                     })()}
                   </div>
+                  {(() => {
+                    const rateWarning = checkPresetRateLimit(nextExpiringPump.syringe);
+                    if (!rateWarning) return null;
+                    return (
+                      <div
+                        role="alert"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/80 text-[11px] text-amber-900 dark:text-amber-200 font-medium mt-1"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                        <span>{rateWarning.message}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3 shrink-0">
