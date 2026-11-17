@@ -20,6 +20,7 @@ export interface DoseConfig {
 export interface PatientProfile {
   id: string;
   label: string;
+  weightKg?: number;
 }
 
 export interface SyringeData {

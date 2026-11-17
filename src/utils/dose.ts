@@ -38,7 +38,8 @@ export function formatDoseNumber(value: number): string {
 }
 
 export function resolveSyringeDoseConfig(
-  syringe: Pick<SyringeData, 'drugName' | 'nominalVolume' | 'doseConfig'>
+  syringe: Pick<SyringeData, 'drugName' | 'nominalVolume' | 'doseConfig'>,
+  fallbackWeightKg?: number
 ): DoseConfig | null {
   if (
     syringe.doseConfig &&
@@ -51,13 +52,16 @@ export function resolveSyringeDoseConfig(
   const preset = findDrugPresetByName(syringe.drugName);
   if (!preset) return null;
 
+  const resolvedWeight =
+    fallbackWeightKg && fallbackWeightKg > 0 ? fallbackWeightKg : 70;
+
   return {
     syringeDrugAmount: preset.syringeDrugAmount,
     syringeDrugUnit: preset.syringeDrugUnit,
     syringeVolumeMl: preset.nominalVolume > 0 ? preset.nominalVolume : 50,
     doseUnit: preset.doseUnit,
     useWeight: preset.useWeight,
-    patientWeightKg: 70,
+    patientWeightKg: resolvedWeight,
     timeBase: preset.timeBase,
     flowMode: preset.flowMode
   };
@@ -76,11 +80,12 @@ export interface ComputedDoseFlow {
  * Computes the current prescribed flow/dose corresponding to syringe.infusionRate (ml/h).
  */
 export function computeDoseFlow(
-  syringe: Pick<SyringeData, 'drugName' | 'nominalVolume' | 'infusionRate' | 'doseConfig'>
+  syringe: Pick<SyringeData, 'drugName' | 'nominalVolume' | 'infusionRate' | 'doseConfig'>,
+  fallbackWeightKg?: number
 ): ComputedDoseFlow | null {
   if (!syringe || syringe.infusionRate <= 0) return null;
 
-  const config = resolveSyringeDoseConfig(syringe);
+  const config = resolveSyringeDoseConfig(syringe, fallbackWeightKg);
   if (!config) return null;
 
   if (getUnitFamily(config.syringeDrugUnit) !== getUnitFamily(config.doseUnit)) {
@@ -113,8 +118,34 @@ export function computeDoseFlow(
     formatted: `${formatDoseNumber(doseValue)} ${unitLabel}`,
     useWeight: config.useWeight,
     weightKg: config.patientWeightKg,
-    isDefaultWeight: !syringe.doseConfig && config.useWeight
+    isDefaultWeight: !syringe.doseConfig && !fallbackWeightKg && config.useWeight
   };
+}
+
+/**
+ * Computes infusionRate (ml/h) from a prescribed dose value and DoseConfig.
+ */
+export function computeRateFromDose(
+  doseValue: number,
+  config: DoseConfig
+): number | null {
+  if (!isFinite(doseValue) || isNaN(doseValue) || doseValue <= 0) return null;
+  if (getUnitFamily(config.syringeDrugUnit) !== getUnitFamily(config.doseUnit)) return null;
+  if (config.useWeight && (!config.patientWeightKg || config.patientWeightKg <= 0)) return null;
+
+  const totalBaseInSyringe = config.syringeDrugAmount * toBaseFactor(config.syringeDrugUnit);
+  const concentrationPerMl = totalBaseInSyringe / config.syringeVolumeMl;
+  if (!isFinite(concentrationPerMl) || concentrationPerMl <= 0) return null;
+
+  const weightMultiplier = config.useWeight ? config.patientWeightKg : 1;
+  const timeMultiplier = config.timeBase === 'min' ? 60 : 1;
+
+  const rateMlH =
+    (doseValue * toBaseFactor(config.doseUnit) * weightMultiplier * timeMultiplier) /
+    concentrationPerMl;
+
+  if (!isFinite(rateMlH) || rateMlH <= 0) return null;
+  return Math.round(rateMlH * 100) / 100;
 }
 
 export interface RateLimitWarning {

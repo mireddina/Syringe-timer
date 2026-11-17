@@ -37,10 +37,17 @@ import {
   formatClockTime,
   parseVolume
 } from './utils/calculations';
-import { computeDoseFlow, checkPresetRateLimit } from './utils/dose';
+import {
+  computeDoseFlow,
+  computeRateFromDose,
+  resolveSyringeDoseConfig,
+  formatDoseNumber,
+  checkPresetRateLimit
+} from './utils/dose';
 import { getPumpColorStyle, PUMP_COLOR_OPTIONS } from './utils/pumpColors';
 import { soundManager } from './utils/audio';
 import { ShiftManager } from './components/ShiftManager';
+import { PatientPrepSummary } from './components/PatientPrepSummary';
 import { ReplacementsTimeline } from './components/ReplacementsTimeline';
 import { RateCalculatorModal } from './components/RateCalculatorModal';
 import { PumpsOverview } from './components/PumpsOverview';
@@ -191,10 +198,13 @@ export default function App() {
   const [isRateCalcOpen, setIsRateCalcOpen] = useState(false);
   const [isAddPumpOpen, setIsAddPumpOpen] = useState(false);
 
-  // Input states for active syringe volume & rate to allow smooth typing (including decimals)
+  // Input states for active syringe volume, rate & dose to allow smooth typing (including decimals)
   const [nominalVolumeInput, setNominalVolumeInput] = useState<string>('50');
   const [currentVolumeInput, setCurrentVolumeInput] = useState<string>('42');
   const [rateInput, setRateInput] = useState<string>('3.5');
+  const [doseInput, setDoseInput] = useState<string>('');
+  const [weightInput, setWeightInput] = useState<string>('70');
+  const [isEditingWeight, setIsEditingWeight] = useState<boolean>(false);
 
   // Input error state
   const [volumeError, setVolumeError] = useState<string | null>(null);
@@ -262,6 +272,26 @@ export default function App() {
     return syringes.filter((s) => resolvePatientId(s) === selectedPatientId);
   }, [syringes, selectedPatientId, patients]);
 
+  const getPatientWeightKg = (patId?: string): number | undefined => {
+    const resolvedId =
+      patId && patients.some((p) => p.id === patId) ? patId : defaultPatientId;
+    const pat = patients.find((p) => p.id === resolvedId);
+    if (pat?.weightKg && pat.weightKg > 0) return pat.weightKg;
+    const fromPump = syringes.find(
+      (s) => resolvePatientId(s) === resolvedId && (s.doseConfig?.patientWeightKg ?? 0) > 0
+    );
+    return fromPump?.doseConfig?.patientWeightKg;
+  };
+
+  const updatePatientWeight = (patId: string | undefined, weightKg: number) => {
+    if (!weightKg || weightKg <= 0 || !isFinite(weightKg)) return;
+    const resolvedId =
+      patId && patients.some((p) => p.id === patId) ? patId : defaultPatientId;
+    setPatients((prev) =>
+      prev.map((p) => (p.id === resolvedId ? { ...p, weightKg } : p))
+    );
+  };
+
   // Get active syringe within current patient scope (may be undefined when empty)
   const activeSyringe = useMemo<SyringeData | undefined>(() => {
     if (visibleSyringes.length === 0) return undefined;
@@ -271,12 +301,18 @@ export default function App() {
   // Keep input fields in sync when active syringe changes
   useEffect(() => {
     if (activeSyringe) {
+      const fallbackW = getPatientWeightKg(activeSyringe.patientId);
       setNominalVolumeInput(formatVolume(activeSyringe.nominalVolume));
       setCurrentVolumeInput(formatVolume(activeSyringe.currentVolume));
       setRateInput(formatVolume(activeSyringe.infusionRate));
+      const cfg = resolveSyringeDoseConfig(activeSyringe, fallbackW);
+      const flow = computeDoseFlow(activeSyringe, fallbackW);
+      setDoseInput(flow ? formatDoseNumber(flow.value) : '');
+      setWeightInput(cfg ? formatVolume(cfg.patientWeightKg) : '70');
+      setIsEditingWeight(false);
       setVolumeError(null);
     }
-  }, [activeSyringe?.id]);
+  }, [activeSyringe?.id, activeSyringe?.drugName, activeSyringe?.doseConfig]);
 
   // Compute shift end date
   const shiftEndDate = useMemo(() => {
@@ -362,11 +398,20 @@ export default function App() {
     }
   }, [activeSyringe?.currentVolume, activeSyringe?.isRunning]);
 
-  // Compute live flow/dose for active syringe
+  // Resolve dose config & live flow/dose for active syringe (inheriting saved patient weight)
+  const activePatientFallbackWeight = activeSyringe
+    ? getPatientWeightKg(activeSyringe.patientId)
+    : undefined;
+
+  const activeDoseConfig = useMemo(() => {
+    if (!activeSyringe) return null;
+    return resolveSyringeDoseConfig(activeSyringe, activePatientFallbackWeight);
+  }, [activeSyringe, activePatientFallbackWeight]);
+
   const activeDoseFlow = useMemo(() => {
     if (!activeSyringe) return null;
-    return computeDoseFlow(activeSyringe);
-  }, [activeSyringe]);
+    return computeDoseFlow(activeSyringe, activePatientFallbackWeight);
+  }, [activeSyringe, activePatientFallbackWeight]);
 
   // Compute earliest upcoming empty pump within selected patient scope (prefer running pumps)
   const nextExpiringPump = useMemo(() => {
@@ -494,12 +539,22 @@ export default function App() {
     );
   };
 
+  // Helper to sync dose input when rate changes externally
+  const syncDoseFromRate = (syringe: SyringeData, newRate: number) => {
+    const flow = computeDoseFlow(
+      { ...syringe, infusionRate: newRate },
+      getPatientWeightKg(syringe.patientId)
+    );
+    setDoseInput(flow ? formatDoseNumber(flow.value) : '');
+  };
+
   // Infusion rate change handler
   const handleRateChange = (valStr: string) => {
     if (!activeSyringe) return;
     setRateInput(valStr);
     const parsed = parseFloat(valStr.replace(',', '.'));
     if (!isNaN(parsed) && parsed > 0) {
+      syncDoseFromRate(activeSyringe, parsed);
       setSyringes((prev) =>
         prev.map((s) => (s.id === activeSyringe.id ? { ...s, infusionRate: parsed } : s))
       );
@@ -512,9 +567,67 @@ export default function App() {
     soundManager.playClick();
     const newRate = Math.max(0.1, Math.round((activeSyringe.infusionRate + delta) * 10) / 10);
     setRateInput(formatVolume(newRate));
+    syncDoseFromRate(activeSyringe, newRate);
     setSyringes((prev) =>
       prev.map((s) => (s.id === activeSyringe.id ? { ...s, infusionRate: newRate } : s))
     );
+  };
+
+  // Direct dose input handler (for drugs with specific dose flows)
+  const handleDoseInputChange = (valStr: string) => {
+    if (!activeSyringe || !activeDoseConfig) return;
+    setDoseInput(valStr);
+    const parsedDose = parseFloat(valStr.replace(',', '.'));
+    if (!isNaN(parsedDose) && parsedDose > 0) {
+      const nextRate = computeRateFromDose(parsedDose, activeDoseConfig);
+      if (nextRate !== null && nextRate > 0) {
+        setRateInput(formatVolume(nextRate));
+        setSyringes((prev) =>
+          prev.map((s) =>
+            s.id === activeSyringe.id
+              ? {
+                  ...s,
+                  infusionRate: nextRate,
+                  doseConfig: s.doseConfig ?? activeDoseConfig
+                }
+              : s
+          )
+        );
+      }
+    }
+  };
+
+  // Patient weight input handler (recomputes ml/h keeping the prescribed dose fixed)
+  const handleWeightInputChange = (valStr: string) => {
+    if (!activeSyringe || !activeDoseConfig) return;
+    setWeightInput(valStr);
+    const parsedWeight = parseFloat(valStr.replace(',', '.'));
+    if (!isNaN(parsedWeight) && parsedWeight > 0) {
+      const updatedConfig = {
+        ...(activeSyringe.doseConfig ?? activeDoseConfig),
+        patientWeightKg: parsedWeight
+      };
+      updatePatientWeight(activeSyringe.patientId, parsedWeight);
+      const currentDoseVal = parseFloat(doseInput.replace(',', '.'));
+      const nextRate =
+        !isNaN(currentDoseVal) && currentDoseVal > 0
+          ? computeRateFromDose(currentDoseVal, updatedConfig)
+          : null;
+      if (nextRate !== null && nextRate > 0) {
+        setRateInput(formatVolume(nextRate));
+      }
+      setSyringes((prev) =>
+        prev.map((s) =>
+          s.id === activeSyringe.id
+            ? {
+                ...s,
+                doseConfig: updatedConfig,
+                infusionRate: nextRate !== null && nextRate > 0 ? nextRate : s.infusionRate
+              }
+            : s
+        )
+      );
+    }
   };
 
   // Play / Pause toggle
@@ -535,6 +648,9 @@ export default function App() {
   // Confirm adding new syringe from AddPumpModal
   const handleConfirmAddSyringe = (newSyringe: SyringeData) => {
     soundManager.playClick();
+    if (newSyringe.doseConfig?.useWeight && newSyringe.doseConfig.patientWeightKg > 0) {
+      updatePatientWeight(newSyringe.patientId, newSyringe.doseConfig.patientWeightKg);
+    }
     setSyringes((prev) => [...prev, newSyringe]);
     setActiveSyringeId(newSyringe.id);
     if (
@@ -1174,19 +1290,36 @@ export default function App() {
                       const matched = findDrugPresetByName(val);
                       const isExact = matched && matched.name.toLowerCase() === val.trim().toLowerCase();
                       setSyringes((prev) =>
-                        prev.map((s) =>
-                          s.id === activeSyringe.id
-                            ? {
-                                ...s,
-                                drugName: val,
-                                concentration: isExact
-                                  ? `${matched.preparation} · ${matched.concentrationLabel}`
-                                  : s.concentration,
-                                doseConfig: isExact ? undefined : s.doseConfig,
-                                color: isExact ? matched.suggestedColor : s.color
-                              }
-                            : s
-                        )
+                        prev.map((s) => {
+                          if (s.id !== activeSyringe.id) return s;
+                          const savedWeight =
+                            s.doseConfig?.patientWeightKg ??
+                            getPatientWeightKg(s.patientId) ??
+                            70;
+                          return {
+                            ...s,
+                            drugName: val,
+                            concentration: isExact
+                              ? `${matched.preparation} · ${matched.concentrationLabel}`
+                              : s.concentration,
+                            doseConfig: isExact
+                              ? {
+                                  syringeDrugAmount: matched.syringeDrugAmount,
+                                  syringeDrugUnit: matched.syringeDrugUnit,
+                                  syringeVolumeMl:
+                                    matched.flowMode === 'direct_ml_h'
+                                      ? matched.nominalVolume
+                                      : s.nominalVolume,
+                                  doseUnit: matched.doseUnit,
+                                  useWeight: matched.useWeight,
+                                  patientWeightKg: savedWeight,
+                                  timeBase: matched.timeBase,
+                                  flowMode: matched.flowMode
+                                }
+                              : s.doseConfig,
+                            color: isExact ? matched.suggestedColor : s.color
+                          };
+                        })
                       );
                     }}
                     className="font-bold text-base text-slate-900 dark:text-slate-100 bg-transparent border-b border-dashed border-slate-300 dark:border-slate-700 focus:border-blue-500 focus:outline-none w-full"
@@ -1455,20 +1588,106 @@ export default function App() {
                   </button>
                 </div>
 
-                {activeDoseFlow && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 text-xs">
-                    <span className="text-slate-500 dark:text-slate-400">
-                      Flusso / Dose equivalente
-                      {activeDoseFlow.useWeight ? ` (peso ${activeDoseFlow.weightKg} kg)` : ''}:
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsRateCalcOpen(true)}
-                      className="font-mono tabular-nums font-bold text-blue-600 dark:text-blue-400 hover:underline"
-                    >
-                      {activeDoseFlow.formatted}
-                    </button>
+                {activeDoseConfig && activeDoseConfig.flowMode !== 'direct_ml_h' ? (
+                  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 space-y-2.5 text-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        Imposta da Dose Specifica
+                      </span>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                        <span>
+                          Prep: {activeDoseConfig.syringeDrugAmount} {activeDoseConfig.syringeDrugUnit} /{' '}
+                          {formatVolume(activeDoseConfig.syringeVolumeMl)} ml
+                        </span>
+                        {activeDoseConfig.useWeight && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span>
+                              Peso: <strong className="text-slate-700 dark:text-slate-200">{formatVolume(activeDoseConfig.patientWeightKg)} kg</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingWeight((v) => !v)}
+                              className="text-blue-600 dark:text-blue-400 hover:underline font-sans font-medium cursor-pointer"
+                            >
+                              {isEditingWeight ? 'Chiudi' : 'Cambia'}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="detail-dose-input"
+                          className="text-[11px] font-mono text-slate-600 dark:text-slate-300 block"
+                        >
+                          Dose ({activeDoseConfig.doseUnit}
+                          {activeDoseConfig.useWeight ? '/kg' : ''}/
+                          {activeDoseConfig.timeBase === 'min' ? 'min' : 'ora'}):
+                        </label>
+                        <div className="relative">
+                          <input
+                            id="detail-dose-input"
+                            type="number"
+                            step="any"
+                            min="0.001"
+                            value={doseInput}
+                            onChange={(e) => handleDoseInputChange(e.target.value)}
+                            placeholder="Es. 0.1"
+                            className="w-full px-3 pr-24 py-1.5 text-sm font-bold font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-mono text-slate-400 pointer-events-none">
+                            {activeDoseConfig.doseUnit}
+                            {activeDoseConfig.useWeight ? '/kg' : ''}/
+                            {activeDoseConfig.timeBase === 'min' ? 'min' : 'ora'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {activeDoseConfig.useWeight && isEditingWeight && (
+                        <div className="flex items-center gap-2 pt-1">
+                          <label
+                            htmlFor="detail-weight-input"
+                            className="text-[11px] font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap"
+                          >
+                            Peso paziente:
+                          </label>
+                          <div className="relative w-28">
+                            <input
+                              id="detail-weight-input"
+                              type="number"
+                              step="any"
+                              min="1"
+                              value={weightInput}
+                              onChange={(e) => handleWeightInputChange(e.target.value)}
+                              className="w-full px-2.5 pr-8 py-1 text-xs font-bold font-mono rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-mono text-slate-400">
+                              kg
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                ) : (
+                  activeDoseFlow && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-800 text-xs">
+                      <span className="text-slate-500 dark:text-slate-400">
+                        Flusso / Dose equivalente
+                        {activeDoseFlow.useWeight ? ` (peso ${activeDoseFlow.weightKg} kg)` : ''}:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setIsRateCalcOpen(true)}
+                        className="font-mono tabular-nums font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {activeDoseFlow.formatted}
+                      </button>
+                    </div>
+                  )
                 )}
 
                 {/* Quick Speed presets */}
@@ -1802,6 +2021,20 @@ export default function App() {
             )}
           </div>
 
+          {/* Patient Syringe Preparation Summary Box */}
+          <PatientPrepSummary
+            syringes={visibleSyringes}
+            patients={patients}
+            selectedPatientId={selectedPatientId}
+            currentTime={currentTime}
+            shiftEndDate={shiftEndDate}
+            onOpenPumpDetail={(id) => {
+              soundManager.playClick();
+              setActiveSyringeId(id);
+              navigateToView('list');
+            }}
+          />
+
           {/* Multi-Pump Shift Replacement List */}
           <ReplacementsTimeline
             syringes={visibleSyringes}
@@ -1829,12 +2062,19 @@ export default function App() {
         nominalVolume={activeSyringe?.nominalVolume ?? 50}
         activeDrugName={activeSyringe?.drugName}
         currentDoseConfig={activeSyringe?.doseConfig}
+        defaultWeightKg={getPatientWeightKg(
+          activeSyringe?.patientId ??
+            (selectedPatientId === 'all' ? defaultPatientId : selectedPatientId)
+        )}
         onApplyRate={(rate, notes, doseConfig) => {
           setRateInput(formatVolume(rate));
           if (!activeSyringe) {
             const newId = `syr-${Date.now()}`;
             const targetPatId =
               selectedPatientId === 'all' ? defaultPatientId : selectedPatientId;
+            if (doseConfig?.useWeight && doseConfig.patientWeightKg > 0) {
+              updatePatientWeight(targetPatId, doseConfig.patientWeightKg);
+            }
             const newSyringe: SyringeData = {
               id: newId,
               patientId: targetPatId,
@@ -1855,13 +2095,21 @@ export default function App() {
             navigateToView('detail');
             return;
           }
+          const nextDoseConfig = doseConfig ?? activeSyringe.doseConfig;
+          syncDoseFromRate({ ...activeSyringe, doseConfig: nextDoseConfig }, rate);
+          if (nextDoseConfig) {
+            setWeightInput(formatVolume(nextDoseConfig.patientWeightKg));
+            if (nextDoseConfig.useWeight && nextDoseConfig.patientWeightKg > 0) {
+              updatePatientWeight(activeSyringe.patientId, nextDoseConfig.patientWeightKg);
+            }
+          }
           setSyringes((prev) =>
             prev.map((s) =>
               s.id === activeSyringe.id
                 ? {
                     ...s,
                     infusionRate: rate,
-                    doseConfig: doseConfig ?? s.doseConfig
+                    doseConfig: nextDoseConfig
                   }
                 : s
             )

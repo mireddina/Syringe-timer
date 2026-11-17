@@ -23,6 +23,7 @@ interface RateCalculatorModalProps {
   nominalVolume: number;
   activeDrugName?: string;
   currentDoseConfig?: DoseConfig;
+  defaultWeightKg?: number;
   onApplyRate: (rate: number, notes?: string, doseConfig?: DoseConfig) => void;
 }
 
@@ -59,6 +60,7 @@ export const RateCalculatorModal: React.FC<RateCalculatorModalProps> = ({
   nominalVolume,
   activeDrugName,
   currentDoseConfig,
+  defaultWeightKg,
   onApplyRate
 }) => {
   const [calcMode, setCalcMode] = useState<'dose' | 'total_time'>('dose');
@@ -109,9 +111,11 @@ export const RateCalculatorModal: React.FC<RateCalculatorModalProps> = ({
         setUseWeight(currentDoseConfig.useWeight);
         setPatientWeightKg(currentDoseConfig.patientWeightKg.toString());
         setTimeBase(currentDoseConfig.timeBase);
+      } else if (defaultWeightKg && defaultWeightKg > 0) {
+        setPatientWeightKg(defaultWeightKg.toString());
       }
     }
-  }, [isOpen, activeDrugName, currentDoseConfig]);
+  }, [isOpen, activeDrugName, currentDoseConfig, defaultWeightKg]);
 
   if (!isOpen) return null;
 

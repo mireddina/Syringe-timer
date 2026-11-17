@@ -82,7 +82,9 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
   // Reset form cleanly whenever modal opens
   useEffect(() => {
     if (isOpen) {
-      setPatientId(defaultPatientId || patients?.[0]?.id || 'pat-1');
+      const initPatId = defaultPatientId || patients?.[0]?.id || 'pat-1';
+      const initPatWeight = patients?.find((p) => p.id === initPatId)?.weightKg;
+      setPatientId(initPatId);
       setSelectedPresetId('');
       setDrugName('');
       setConcentrationNote('');
@@ -96,7 +98,9 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
       setColor(COLOR_OPTIONS[(nextPumpNumber - 1) % COLOR_OPTIONS.length].id);
       setAlertMinutesBefore(15);
       setIsRunning(true);
-      setPresetWeightKg('70');
+      setPresetWeightKg(
+        initPatWeight && initPatWeight > 0 ? formatVolume(initPatWeight) : '70'
+      );
       setPresetDoseValue('');
       setFormError(null);
     }
@@ -401,7 +405,21 @@ export const AddPumpModal: React.FC<AddPumpModalProps> = ({
                     <button
                       key={pat.id}
                       type="button"
-                      onClick={() => setPatientId(pat.id)}
+                      onClick={() => {
+                        setPatientId(pat.id);
+                        if (pat.weightKg && pat.weightKg > 0) {
+                          const wStr = formatVolume(pat.weightKg);
+                          setPresetWeightKg(wStr);
+                          if (activePreset && presetDoseValue && parsedNominal) {
+                            computeRateFromPresetDose(
+                              activePreset,
+                              presetDoseValue,
+                              wStr,
+                              parsedNominal
+                            );
+                          }
+                        }
+                      }}
                       className={`px-3 py-1.5 rounded-lg border text-xs font-semibold truncate transition-colors cursor-pointer ${
                         isActivePat
                           ? 'border-blue-600 bg-blue-600 text-white shadow-xs'
